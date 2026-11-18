@@ -130,9 +130,8 @@ def track(
     )
 
     # metadata
-    # todo: fix: the history is set for locdata instead of collection
-    del locdata.meta.history[:]
-    locdata.meta.history.add(
+    del collection.meta.history[:]
+    collection.meta.history.add(
         name=sys._getframe().f_code.co_name, parameter=str(parameter)
     )
 

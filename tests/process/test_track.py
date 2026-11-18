@@ -91,3 +91,15 @@ def test_track_reduce(locdata_simple):
     assert len(locdata_new) == 5
     pd.testing.assert_frame_equal(locdata_new.data, expected.data)
     assert track_series.tolist() == [0, 0, 0, 1, 2, 2, 3, 4]
+
+
+@pytest.mark.parametrize("reduce", [False, True])
+def test_track_history(locdata_simple, reduce):
+    locdata_simple.meta.history.add(name="some_function")
+    locdata_new, _track_series = track(locdata_simple, search_range=5, reduce=reduce)
+    assert [item.name for item in locdata_simple.meta.history] == ["some_function"]
+    assert [item.name for item in locdata_new.meta.history] == ["track"]
+    assert (
+        f"'search_range': 5, 'memory': 0, 'reduce': {reduce}"
+        in locdata_new.meta.history[0].parameter
+    )

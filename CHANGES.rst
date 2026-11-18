@@ -71,6 +71,8 @@ Bug Fixes
 - fix: ``cluster_by_bin`` and ``select_by_image_mask`` select localizations by index
   label instead of row position
 - fix: LocalizationPrecision.compute includes the last pair of successive frames.
+- fix: ``track`` records its call in the metadata history of the returned
+  collection instead of replacing the history of the input ``locdata``
 
 Other Changes and Additions
 ---------------------------
