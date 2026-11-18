@@ -15,6 +15,8 @@ New Features
   how a range that is not divisible by ``bin_size`` is treated
 - new ``Bins`` members: ``to_boost_histogram_axes()``, ``digitize()``, ``extent``,
   ``with_labels()``, ``isclose()``, ``__eq__`` and ``__repr__``
+- ``track`` takes ``reduce=True`` to return the collection of tracks without a
+  ``LocData`` reference for each track
 
 API Changes
 -----------
@@ -89,6 +91,10 @@ Other Changes and Additions
   freeze is removed)
 - building a ``LocData`` selection is about 10 times faster; ``len``,
   ``coordinates``, ``coordinate_keys`` and ``centroid`` no longer recompute it
+- ``track`` computes the properties of all tracks in one pass, which is about 9
+  times faster for 10 000 tracks; the selections in ``references`` compute their
+  data and hulls on request, weighted uncertainties agree with the previous values
+  within rounding error and a localization outside the region is logged once
 - refactor Fourier ring/shell correlation with performance gain
 - LocalizationPrecision.compute is vectorised (a single KD-tree query instead of a loop over frames and pairs).
 - locan.config.n_cpus must be a positive integer, -1 (all CPU cores) or -2 (all CPU cores but one); 0 and values below -2 raise a ValidationError

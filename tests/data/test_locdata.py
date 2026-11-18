@@ -1027,3 +1027,133 @@ def test_update_properties_in_references(df_simple, caplog):
     new_properties.index = [3, 1]
     with pytest.raises(ValueError):
         new_collection.update_properties_in_references(properties=new_properties)
+
+
+@pytest.fixture()
+def df_groups():
+    """
+    Fixture for returning localizations with arbitrary index that form the
+    groups in `GROUP_LABELS`.
+    """
+    dict_ = {
+        "position_x": [0.0, 10, 1, 20, 2, 10],
+        "position_y": [0.0, 10, 1, 20, 5, 12],
+        "uncertainty_x": [1.0, 2, 2, 3, 1, 2],
+        "intensity": [1.0, 4, 2, 6, 3, 5],
+        "local_background": [1.0, 2, 1, 6, 4, 4],
+        "frame": [3, 7, 1, 9, 2, 8],
+    }
+    return pd.DataFrame.from_dict(dict_).set_axis([2, 1, 5, 10, 100, 200])
+
+
+GROUP_LABELS = [7, 3, 7, 5, 7, 3]
+
+
+def collect_selections(locdata, labels):
+    return LocData.from_collection(
+        [
+            LocData.from_selection(locdata=locdata, indices=group.index.to_numpy())
+            for _, group in labels.groupby(labels)
+        ]
+    )
+
+
+def comparable_meta(locdata):
+    meta = metadata_pb2.Metadata()
+    meta.CopyFrom(locdata.meta)
+    for field in ("identifier", "modification_time"):
+        meta.ClearField(field)
+    return meta
+
+
+def assert_same_selections(collection, expected):
+    pd.testing.assert_frame_equal(collection.data, expected.data)
+    assert len(collection.references) == len(expected.references)
+    for selection, expected_selection in zip(
+        collection.references, expected.references
+    ):
+        assert vars(selection).keys() == vars(expected_selection).keys()
+        assert list(selection.properties) == list(expected_selection.properties)
+        assert selection.properties == pytest.approx(expected_selection.properties)
+        pd.testing.assert_frame_equal(selection.data, expected_selection.data)
+        assert selection.references is expected_selection.references
+        assert selection.region is expected_selection.region
+        assert selection.dimension == expected_selection.dimension
+        assert np.array_equal(
+            selection.bounding_box.hull, expected_selection.bounding_box.hull
+        )
+        assert comparable_meta(selection) == comparable_meta(expected_selection)
+
+
+@pytest.mark.parametrize(
+    "modify, counts",
+    [
+        pytest.param(lambda df: df, [2, 1, 3], id="all_properties"),
+        pytest.param(
+            lambda df: df[["position_x", "position_y"]], [2, 1, 3], id="coordinates"
+        ),
+        pytest.param(
+            lambda df: df.assign(position_z=np.arange(6.0)), [2, 1, 3], id="3d"
+        ),
+        pytest.param(
+            lambda df: df.assign(intensity=[1, np.nan, 3, 4, 5, 6]),
+            [2, 1, 3],
+            id="nan",
+        ),
+        pytest.param(
+            lambda df: df.set_axis([2, 2, 5, 10, 100, 200]),
+            [3, 1, 4],
+            id="duplicate_index",
+        ),
+    ],
+)
+def test_locdata__from_groups(df_groups, modify, counts):
+    locdata = LocData.from_dataframe(dataframe=modify(df_groups))
+    labels = pd.Series(GROUP_LABELS, index=locdata.data.index).iloc[::-1]
+    expected = collect_selections(locdata, labels)
+
+    collection = LocData._from_groups(locdata=locdata, labels=labels)
+    assert_same_selections(collection, expected)
+    assert collection.data.localization_count.tolist() == counts
+
+    collection = LocData._from_groups(locdata=locdata, labels=labels, reduce=True)
+    assert collection.references is None
+    pd.testing.assert_frame_equal(collection.data, expected.data)
+    assert collection.meta.ancestor_identifiers == [locdata.meta.identifier]
+
+
+@pytest.mark.parametrize(
+    "region, n_warnings",
+    [
+        (Rectangle((-1, -1), 30, 30, 0), 0),
+        (Rectangle((-1, -1), 15, 15, 0), 1),
+        (Rectangle((0, 0), 0, 30, 0), 1),
+    ],
+)
+def test_locdata__from_groups_with_region(df_groups, caplog, region, n_warnings):
+    locdata = LocData.from_dataframe(dataframe=df_groups)
+    locdata.region = region
+    labels = pd.Series(GROUP_LABELS, index=locdata.data.index)
+    expected = collect_selections(locdata, labels)
+
+    caplog.clear()
+    collection = LocData._from_groups(locdata=locdata, labels=labels)
+    messages = [record.message for record in caplog.records]
+    assert messages.count("Not all coordinates are within region.") == n_warnings
+    assert_same_selections(collection, expected)
+    assert collection.references[0].region is region
+
+
+def test_locdata__from_groups_with_missing_indices(df_groups):
+    locdata = LocData.from_dataframe(dataframe=df_groups)
+    labels = pd.Series([1, 1, 2], index=[2, 99, 5])
+    with pytest.warns(FutureWarning, match="not in the referenced LocData"):
+        collection = LocData._from_groups(locdata=locdata, labels=labels)
+    assert [list(ref.data.index) for ref in collection.references] == [[2], [5]]
+
+
+def test_locdata__from_groups_empty(df_groups):
+    locdata = LocData.from_dataframe(dataframe=df_groups)
+    collection = LocData._from_groups(locdata=locdata, labels=pd.Series(dtype=int))
+    assert len(collection) == 0
+    assert collection.references == []

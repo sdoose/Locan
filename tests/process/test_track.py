@@ -82,3 +82,12 @@ def test_track(locdata_simple):
 
     locdata_new, _track_series = track(locdata_simple, search_range=5, memory=5)
     assert len(locdata_new) == 4
+
+
+def test_track_reduce(locdata_simple):
+    expected, _track_series = track(locdata_simple, search_range=5)
+    locdata_new, track_series = track(locdata_simple, search_range=5, reduce=True)
+    assert locdata_new.references is None
+    assert len(locdata_new) == 5
+    pd.testing.assert_frame_equal(locdata_new.data, expected.data)
+    assert track_series.tolist() == [0, 0, 0, 1, 2, 2, 3, 4]

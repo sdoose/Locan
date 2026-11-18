@@ -7,7 +7,7 @@ Utility functions for working with locdata.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -138,6 +138,189 @@ def _get_linked_coordinates(
             results_dict[new_uncertainty_key_] = weighted_uncertainty
 
     return results_dict
+
+
+def _get_grouped_properties(
+    locdata: pd.DataFrame,
+    positions: npt.NDArray[np.intp],
+    starts: npt.NDArray[np.intp],
+    coordinate_keys: Sequence[str],
+) -> dict[str, npt.NDArray[Any]] | None:
+    """
+    Compute the properties of groups of localizations in one pass.
+
+    The properties are those that :class:`locan.LocData` computes for a
+    selection of each group: the localization count, coordinates and
+    uncertainties as given by :func:`_get_linked_coordinates`,
+    the sum of `intensity`, the mean of `local_background`,
+    the minimum of `frame` and the measures of the bounding box.
+
+    Parameters
+    ----------
+    locdata
+        dataframe with locdata
+    positions
+        Row positions in locdata, ordered such that the rows of each group
+        are adjacent.
+    starts
+        Position in `positions` at which each group starts.
+    coordinate_keys
+        Coordinate keys that span the bounding box.
+
+    Returns
+    -------
+    dict[str, npt.NDArray[Any]] | None
+        Property values with one element per group.
+        nan marks a bounding box property that is not available for a
+        group.
+        None if the properties have to be computed for each group
+        separately: there is no group or no coordinate, or a value is not
+        numeric or not finite.
+    """
+    position_keys = _get_loc_property_key_per_dimension(
+        locdata=locdata, property_key="position"
+    )
+    uncertainty_keys = _get_loc_property_key_per_dimension(
+        locdata=locdata, property_key="uncertainty"
+    )
+    used_keys = {
+        key
+        for key in (
+            *position_keys,
+            *uncertainty_keys,
+            *coordinate_keys,
+            "intensity",
+            "local_background",
+            "frame",
+        )
+        if key is not None and key in locdata.columns
+    }
+    dtypes = locdata.dtypes
+    if (
+        not len(starts)
+        or not coordinate_keys
+        or not all(
+            isinstance(dtypes[key], np.dtype) and dtypes[key].kind in "iuf"
+            for key in used_keys
+        )
+    ):
+        return None
+
+    counts = np.diff(np.append(starts, len(positions)))
+    is_single = counts == 1
+
+    def take(key: str) -> npt.NDArray[np.float64]:
+        values: npt.NDArray[np.float64] = locdata[key].to_numpy(dtype=np.float64)
+        return values[positions]
+
+    properties: dict[str, npt.NDArray[Any]] = {"localization_count": counts}
+
+    # divisions by zero are resolved below: values for groups of one
+    # localization are set explicitly, other non-finite results return None
+    with np.errstate(divide="ignore", invalid="ignore"):
+        for position_key, uncertainty_key, new_uncertainty_key in zip(
+            position_keys,
+            uncertainty_keys,
+            ["uncertainty_x", "uncertainty_y", "uncertainty_z"],
+        ):
+            if position_key is None:
+                continue
+            values = take(position_key)
+            if uncertainty_key is None:
+                weights = np.ones(len(values))
+                single_uncertainty = np.zeros(len(starts))
+            else:
+                uncertainties = take(uncertainty_key)
+                weights = 1 / uncertainties**2
+                single_uncertainty = uncertainties[starts]
+            sum_weights = np.add.reduceat(weights, starts)
+            mean = np.where(
+                is_single,
+                values[starts],
+                np.add.reduceat(weights * values, starts) / sum_weights,
+            )
+            # weighted_mean_variance expands this sum of squares into three
+            # terms that cancel for coordinates far from zero; the results
+            # agree only within that rounding error.
+            deviations = weights * (values - np.repeat(mean, counts))
+            variance = (
+                counts
+                / (counts - 1)
+                / sum_weights**2
+                * np.add.reduceat(deviations**2, starts)
+            )
+            properties[position_key] = mean
+            properties[new_uncertainty_key] = np.where(
+                is_single, single_uncertainty, np.sqrt(variance)
+            )
+
+        if "intensity" in locdata.columns:
+            intensity = locdata["intensity"].to_numpy()[positions]
+            # pandas sums integers of any size as 64-bit integers
+            dtype = {"i": np.int64, "u": np.uint64}.get(intensity.dtype.kind)
+            properties["intensity"] = np.add.reduceat(intensity, starts, dtype=dtype)
+
+        if "local_background" in locdata.columns:
+            properties["local_background"] = (
+                np.add.reduceat(take("local_background"), starts) / counts
+            )
+
+        if "frame" in locdata.columns:
+            properties["frame"] = np.minimum.reduceat(
+                locdata["frame"].to_numpy()[positions], starts
+            )
+
+        widths = []
+        for coordinate_key in coordinate_keys:
+            values = take(coordinate_key)
+            widths.append(
+                np.maximum.reduceat(values, starts)
+                - np.minimum.reduceat(values, starts)
+            )
+        width = np.stack(widths, axis=1)
+        region_measure = np.where(is_single, 0.0, np.prod(width, axis=1))
+        subregion_measure = np.where(is_single, 0.0, 2 * np.sum(width, axis=1))
+        properties["region_measure_bb"] = region_measure
+
+        if not all(np.isfinite(values_).all() for values_ in properties.values()):
+            return None
+
+        properties["localization_density_bb"] = np.where(
+            region_measure != 0, counts / region_measure, np.nan
+        )
+        properties["subregion_measure_bb"] = np.where(
+            subregion_measure != 0, subregion_measure, np.nan
+        )
+
+    return properties
+
+
+def _get_grouped_unique_counts(
+    values: npt.NDArray[Any], starts: npt.NDArray[np.intp]
+) -> npt.NDArray[np.intp]:
+    """
+    Count the unique values in each group of adjacent values.
+
+    Parameters
+    ----------
+    values
+        Values, ordered such that the values of each group are adjacent.
+    starts
+        Position in `values` at which each group starts.
+
+    Returns
+    -------
+    npt.NDArray[np.intp]
+        Number of unique values with one element per group.
+    """
+    counts = np.diff(np.append(starts, len(values)))
+    groups = np.repeat(np.arange(len(starts)), counts)
+    sorted_values = values[np.lexsort((values, groups))]
+    is_new = np.ones(len(values), dtype=np.intp)
+    is_new[1:] = sorted_values[1:] != sorted_values[:-1]
+    is_new[starts] = 1
+    return_value: npt.NDArray[np.intp] = np.add.reduceat(is_new, starts)
+    return return_value
 
 
 def _bump_property_key(

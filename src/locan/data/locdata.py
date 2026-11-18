@@ -11,7 +11,7 @@ import logging
 import os
 import warnings
 from collections.abc import Callable, Iterable, Sequence
-from itertools import accumulate
+from itertools import accumulate, repeat
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal, Self, TypeVar
 
 import numpy as np
@@ -26,7 +26,12 @@ from locan import (  # is required to use locdata_id as global variable  # noqa:
 )
 from locan.constants import PROPERTY_KEYS, PropertyKey
 from locan.data import metadata_pb2
-from locan.data.locdata_utils import _dataframe_to_pandas, _get_linked_coordinates
+from locan.data.locdata_utils import (
+    _dataframe_to_pandas,
+    _get_grouped_properties,
+    _get_grouped_unique_counts,
+    _get_linked_coordinates,
+)
 from locan.data.metadata_utils import (
     _modify_meta,
     merge_metadata,
@@ -944,6 +949,200 @@ class LocData:
         meta_ = merge_metadata(metadata=meta_, other_metadata=meta)
 
         return cls(references=references, dataframe=dataframe, meta=meta_)
+
+    @classmethod
+    def _from_properties(
+        cls: type[T_LocData],  # noqa: UP006
+        references: LocData,
+        indices: npt.NDArray[Any],
+        properties: dict[str, Any],
+        dimension: int,
+        frame_count: int | None,
+        meta: metadata_pb2.Metadata,
+    ) -> T_LocData:
+        """
+        Create the LocData object that
+        `LocData(references, indices=indices, meta=meta)` returns
+        from given `properties`, `dimension` and `frame_count`
+        instead of computing them from the selected data.
+
+        Parameters
+        ----------
+        references
+            Locdata object from which to select elements.
+        indices
+            Index labels for elements in references that make up the data.
+        properties
+            Properties of the selected data.
+        dimension
+            Number of coordinates available for each localization.
+        frame_count
+            Number of frames in the selected data or None if the data has
+            no frames.
+        meta
+            Metadata about the current dataset and its history.
+
+        Returns
+        -------
+        LocData
+            A new LocData instance that computes its data and hulls on
+            request.
+        """
+        # bypasses __init__: every attribute that is set there is set here
+        new_locdata = cls.__new__(cls)
+        cls.count += 1
+
+        new_locdata.references = references
+        new_locdata.dataframe = pd.DataFrame()
+        new_locdata.indices = indices
+        new_locdata.properties = properties
+        new_locdata._selection_cache = None
+
+        new_locdata._region = None
+        new_locdata._bounding_box = None
+        new_locdata._oriented_bounding_box = None
+        new_locdata._convex_hull = None
+        new_locdata._alpha_shape = None
+        new_locdata._inertia_moments = None
+
+        new_locdata.dimension = dimension
+
+        global locdata_id
+        locdata_id += 1
+        new_locdata.meta = metadata_pb2.Metadata()
+        new_locdata.meta.identifier = str(locdata_id)
+        new_locdata.meta.creation_time.GetCurrentTime()
+        new_locdata.meta.source = metadata_pb2.DESIGN
+        new_locdata.meta.state = metadata_pb2.RAW
+        new_locdata.meta.element_count = int(properties["localization_count"])
+        if frame_count is not None:
+            new_locdata.meta.frame_count = frame_count
+        new_locdata.meta.MergeFrom(meta)
+        return new_locdata
+
+    @classmethod
+    def _from_groups(
+        cls: type[T_LocData],  # noqa: UP006
+        locdata: LocData,
+        labels: pd.Series[Any],
+        reduce: bool = False,
+    ) -> T_LocData:
+        """
+        Create new LocData object by collecting a selection of `locdata`
+        for each group of elements.
+
+        The result is that of :meth:`from_collection` for a
+        :meth:`from_selection` of each group.
+        If the localization data allows it, the properties of all
+        selections are computed in one pass and each selection computes
+        its data and hulls on request.
+
+        Parameters
+        ----------
+        locdata
+            Locdata object from which to select elements.
+        labels
+            Group label for each selected element. The index holds the
+            index label of the element in locdata. Groups are collected in
+            sorted order; elements keep their order within a group.
+        reduce
+            Return the reduced LocData object or keep references alive.
+
+        Returns
+        -------
+        LocData
+            A new LocData instance assembling all selections.
+        """
+        data = locdata._data
+        order = np.argsort(labels.to_numpy(), kind="stable")
+        sorted_labels = labels.to_numpy()[order]
+        indices = labels.index.to_numpy()[order]
+        is_start = np.ones(len(indices), dtype=bool)
+        is_start[1:] = sorted_labels[1:] != sorted_labels[:-1]
+        starts = np.flatnonzero(is_start)
+        stops = np.append(starts[1:], len(indices))
+
+        positions = None
+        if data.index.is_unique:
+            positions = data.index.get_indexer(pd.Index(indices))
+        properties = None
+        if positions is not None and (positions >= 0).all():
+            properties = _get_grouped_properties(
+                locdata=data,
+                positions=positions,
+                starts=starts,
+                coordinate_keys=locdata.coordinate_keys,
+            )
+
+        selections: list[T_LocData] = []
+        if positions is None or properties is None:
+            selections = [
+                cls.from_selection(locdata=locdata, indices=indices[start:stop])
+                for start, stop in zip(starts, stops)
+            ]
+            records = [selection.properties for selection in selections]
+        else:
+            region = locdata.region
+            if region is not None:
+                is_inside = np.zeros(len(data), dtype=bool)
+                is_inside[region.contains(locdata.coordinates)] = True
+                if not is_inside[positions].all():
+                    logger.warning("Not all coordinates are within region.")
+                if region.region_measure:
+                    properties["region_measure"] = np.full(
+                        len(starts), region.region_measure
+                    )
+                    properties["localization_density"] = (
+                        properties["localization_count"] / region.region_measure
+                    )
+                if region.subregion_measure:
+                    properties["subregion_measure"] = np.full(
+                        len(starts), region.subregion_measure
+                    )
+
+            # nan marks a property that is not available for a selection
+            records = [
+                {key: value for key, value in zip(properties, row) if value == value}
+                for row in zip(*properties.values())
+            ]
+
+            if not reduce:
+                # metadata as set by from_selection
+                meta_ = metadata_pb2.Metadata()
+                meta_.CopyFrom(locdata.meta)
+                for field in ("identifier", "element_count", "frame_count"):
+                    meta_.ClearField(field)
+                meta_.modification_time.GetCurrentTime()
+                meta_.state = metadata_pb2.MODIFIED
+                meta_.ancestor_identifiers.append(locdata.meta.identifier)
+                meta_.history.add(name="LocData.from_selection")
+
+                frame_counts: Iterable[int | None] = repeat(None)
+                if "frame" in data.columns:
+                    frame_counts = _get_grouped_unique_counts(
+                        values=data["frame"].to_numpy()[positions], starts=starts
+                    ).tolist()
+
+                dimension = len(locdata.coordinate_keys)
+                for record, start, stop, frame_count in zip(
+                    records, starts, stops, frame_counts
+                ):
+                    selection = cls._from_properties(
+                        references=locdata,
+                        indices=indices[start:stop],
+                        properties=record,
+                        dimension=dimension,
+                        frame_count=frame_count,
+                        meta=meta_,
+                    )
+                    selection._region = region
+                    selections.append(selection)
+
+        if reduce:
+            meta_ = metadata_pb2.Metadata()
+            meta_.ancestor_identifiers.append(locdata.meta.identifier)
+            return cls.from_dataframe(dataframe=pd.DataFrame(records), meta=meta_)
+        return cls.from_collection(selections)
 
     @classmethod
     def concat(

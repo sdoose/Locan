@@ -78,6 +78,8 @@ def track(
     locdata: LocData,
     search_range: float | tuple[float, ...] = 40,
     memory: int = 0,
+    *,
+    reduce: bool = False,
     **kwargs: Any,
 ) -> tuple[LocData, pd.Series[Any]]:
     """
@@ -100,6 +102,11 @@ def track(
     memory
         The maximum number of frames during which a feature can vanish, then
         reappear nearby, and be considered the same particle.
+    reduce
+        Return the reduced LocData object or keep references alive.
+        The reduced object carries the properties of all tracks but no
+        references to a selection of localizations for each track;
+        setting it up is faster for a large number of tracks.
     kwargs
         Other parameters passed to trackpy.link_df.
 
@@ -118,14 +125,12 @@ def track(
     parameter = locals()
 
     track_series = link_locdata(locdata, search_range, memory, **kwargs)
-    grouped = track_series.groupby(track_series)
-    selections = [
-        LocData.from_selection(locdata=locdata, indices=group.index.values)
-        for _, group in grouped
-    ]
-    collection = LocData.from_collection(selections)
+    collection = LocData._from_groups(
+        locdata=locdata, labels=track_series, reduce=reduce
+    )
 
     # metadata
+    # todo: fix: the history is set for locdata instead of collection
     del locdata.meta.history[:]
     locdata.meta.history.add(
         name=sys._getframe().f_code.co_name, parameter=str(parameter)
