@@ -193,6 +193,8 @@ class LocData:
         `local_background`: mean
         `frame`: min
 
+        For empty localization data these properties are nan.
+
         Parameters
         ----------
         update_function
@@ -230,7 +232,10 @@ class LocData:
             self.properties.update(_get_linked_coordinates(locdata=data))
 
         if "intensity" in properties_for_update:
-            self.properties["intensity"] = np.sum(data["intensity"])
+            # the sum of no values is 0, which reads as a measured intensity
+            self.properties["intensity"] = (
+                np.sum(data["intensity"]) if len(data.index) else np.nan
+            )
 
         if "local_background" in properties_for_update:
             self.properties["local_background"] = np.mean(data["local_background"])
@@ -346,6 +351,10 @@ class LocData:
 
     def _update_properties_bounding_box(self) -> None:
         if self._bounding_box is not None:
+            if not self.properties["localization_count"]:
+                # BoundingBox reports a measure of 0 for no points
+                self.properties["region_measure_bb"] = np.nan
+                return
             self.properties["region_measure_bb"] = self._bounding_box.region_measure
             if self._bounding_box.region_measure:
                 self.properties["localization_density_bb"] = (
@@ -704,6 +713,7 @@ class LocData:
         """
         npt.NDArray[np.float64]: Return coordinate values of the centroid
         (being the property values for all coordinate labels).
+        The values are nan if there are no localizations.
         """
         return np.array(
             [

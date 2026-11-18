@@ -177,6 +177,12 @@ def test_compute_inertia_moments_3d(caplog):
     ]
 
 
+@pytest.mark.parametrize("n_points", [0, 1])
+def test_compute_inertia_moments_for_too_few_points(n_points):
+    with pytest.raises(TypeError, match="at least 2 points"):
+        inertia_moments(np.zeros((n_points, 2)))
+
+
 def test_distance_to_point(locdata_2d, locdata_3d):
     distances = distance_to_point(locdata=locdata_2d, point=locdata_2d.centroid)
     assert distances.shape == (len(locdata_2d),)

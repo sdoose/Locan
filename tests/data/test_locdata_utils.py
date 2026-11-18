@@ -164,6 +164,19 @@ def test__get_linked_coordinates(
     }
 
 
+def test__get_linked_coordinates_without_localizations(df_single):
+    results = _get_linked_coordinates(locdata=df_single.iloc[:0])
+    assert results == pytest.approx(
+        {
+            "position_y": np.nan,
+            "uncertainty_y": np.nan,
+            "position_z": np.nan,
+            "uncertainty_z": np.nan,
+        },
+        nan_ok=True,
+    )
+
+
 def test__get_grouped_properties(df_groups):
     positions = np.array([0, 2, 4, 1, 5, 3])
     starts = np.array([0, 3, 5])

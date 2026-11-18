@@ -90,6 +90,7 @@ def _get_linked_coordinates(
     -------
     dict[str, int | float | npt.NDArray[np.float64]]
         New position coordinates and related uncertainties as 'uncertainty_c'.
+        All values are nan if locdata is empty.
     """
     available_coordinate_keys = _get_loc_property_key_per_dimension(
         locdata=locdata, property_key="position"
@@ -109,7 +110,8 @@ def _get_linked_coordinates(
             coordinate_keys is None or coordinate_key_ in coordinate_keys
         ):
             if not len(locdata):
-                return dict()
+                weighted_mean = np.nan
+                weighted_uncertainty = np.nan
             elif len(locdata) == 1:
                 weighted_mean = locdata[coordinate_key_].iloc[0]
                 if uncertainty_key_ is None:

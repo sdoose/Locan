@@ -180,11 +180,18 @@ def inertia_moments(points: npt.ArrayLike) -> InertiaMoments:
         A tuple with eigenvalues, eigenvectors, variance_explained,
         orientation, eccentricity
 
+    Raises
+    ------
+    TypeError
+        If fewer than 2 points are given.
+
     Note
     ----
     The data is not standardized.
     """
     points = np.asarray(points)
+    if len(points) < 2:
+        raise TypeError("inertia_moments needs at least 2 points as input.")
     covariance_matrix = np.cov(points.T)
     eigen_values, eigen_vectors = np.linalg.eig(covariance_matrix)
     variance_explained = [

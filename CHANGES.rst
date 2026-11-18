@@ -44,6 +44,10 @@ API Changes
   (``FutureWarning``) and will raise a ``KeyError`` in a future version
 - columns in the ``dataframe`` of a selection are joined to the selected rows only;
   rows for other index labels are no longer appended
+- the properties of an empty ``LocData`` are ``nan``: the coordinates and their
+  uncertainties (previously missing), ``intensity`` and ``region_measure_bb``
+  (previously 0)
+- ``inertia_moments`` raises ``TypeError`` for fewer than two points
 
 Bug Fixes
 ---------
@@ -73,6 +77,9 @@ Bug Fixes
 - fix: LocalizationPrecision.compute includes the last pair of successive frames.
 - fix: ``track`` records its call in the metadata history of the returned
   collection instead of replacing the history of the input ``locdata``
+- fix: ``LocData.centroid`` raised ``KeyError`` for an empty ``LocData``
+- fix: ``LocData.inertia_moments`` raised for fewer than two localizations instead
+  of warning that the properties could not be computed
 
 Other Changes and Additions
 ---------------------------

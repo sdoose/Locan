@@ -135,18 +135,58 @@ def test_update_properties():
 def test_LocData_empty(df_empty):
     dat = LocData()
     assert dat.data.empty
-    assert dat.properties == {"localization_count": 0, "region_measure_bb": 0}
+    assert dat.properties == pytest.approx(
+        {"localization_count": 0, "region_measure_bb": np.nan}, nan_ok=True
+    )
     assert len(dat) == 0
     assert dat.coordinate_keys == []
     assert dat.dimension == 0
 
     dat = LocData(dataframe=df_empty)
     assert dat.data.empty
-    assert dat.properties == {"localization_count": 0, "region_measure_bb": 0}
+    assert dat.properties == pytest.approx(
+        {"localization_count": 0, "region_measure_bb": np.nan}, nan_ok=True
+    )
     assert len(dat) == 0
     assert dat.coordinate_keys == []
     assert dat.dimension == 0
     # hulls are tested with locdata fixtures further down.
+
+
+@pytest.mark.parametrize("is_selection", [False, True])
+def test_LocData_empty_with_loc_properties(df_groups, is_selection):
+    if is_selection:
+        dat = LocData.from_selection(
+            locdata=LocData.from_dataframe(dataframe=df_groups), indices=[]
+        )
+    else:
+        dat = LocData.from_dataframe(dataframe=df_groups.iloc[:0])
+    assert len(dat) == 0
+    assert dat.coordinate_keys == ["position_x", "position_y"]
+    assert dat.properties == pytest.approx(
+        {
+            "localization_count": 0,
+            "position_x": np.nan,
+            "uncertainty_x": np.nan,
+            "position_y": np.nan,
+            "uncertainty_y": np.nan,
+            "intensity": np.nan,
+            "local_background": np.nan,
+            "frame": np.nan,
+            "region_measure_bb": np.nan,
+        },
+        nan_ok=True,
+    )
+    assert np.array_equal(dat.centroid, [np.nan, np.nan], equal_nan=True)
+
+
+@pytest.mark.parametrize("n_localizations", [0, 1])
+def test_LocData_inertia_moments_for_too_few_localizations(df_simple, n_localizations):
+    dat = LocData.from_dataframe(dataframe=df_simple.iloc[:n_localizations])
+    with pytest.warns(UserWarning, match="inertia_moments"):
+        assert dat.inertia_moments is None
+    assert "orientation_im" not in dat.properties
+    assert "circularity_im" not in dat.properties
 
 
 def test_LocData_from_dataframe(df_simple):
@@ -405,7 +445,9 @@ def test_LocData_concat(df_simple):
     col = LocData.concat([LocData(), LocData()], meta=COMMENT_METADATA)
     assert col.dimension == 0
     assert len(col) == 0
-    assert col.properties == {"localization_count": 0, "region_measure_bb": 0}
+    assert col.properties == pytest.approx(
+        {"localization_count": 0, "region_measure_bb": np.nan}, nan_ok=True
+    )
     assert col.meta.comment == COMMENT_METADATA.comment
 
     dat = LocData.from_dataframe(dataframe=df_simple)
