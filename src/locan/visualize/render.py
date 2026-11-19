@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any
 from locan import config
 from locan.constants import RenderEngine
 from locan.dependencies import HAS_DEPENDENCY
+
+# pyrefly: ignore[deprecated]  # reason: target of MPL_SCATTER_DENSITY
 from locan.visualize.render_mpl.render2d import render_2d_mpl, render_2d_scatter_density
 from locan.visualize.render_napari.render2d import render_2d_napari
 from locan.visualize.render_napari.render3d import render_3d_napari
@@ -42,6 +44,9 @@ def render_2d(
         HAS_DEPENDENCY["mpl_scatter_density"]
         and render_engine == RenderEngine.MPL_SCATTER_DENSITY
     ):
+        # todo: the DeprecationWarning is attributed to this module, so the
+        # default warning filter hides it from the caller of render_2d.
+        # pyrefly: ignore[deprecated]  # reason: target of MPL_SCATTER_DENSITY
         return render_2d_scatter_density(locdata, **kwargs)
     elif HAS_DEPENDENCY["napari"] and render_engine == RenderEngine.NAPARI:
         return render_2d_napari(locdata, **kwargs)

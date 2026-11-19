@@ -1588,3 +1588,78 @@ def test__polygon_path():
     polygon = Polygon(((0, 0), (0, 1), (2, 2)))
     path = _polygon_path(polygon=polygon)
     assert isinstance(path, mplPath)
+
+
+@pytest.mark.parametrize(
+    "region",
+    [
+        EmptyRegion(),
+        Interval(),
+        AxisOrientedRectangle(),
+        Rectangle(),
+        Ellipse(),
+        Polygon(((0, 0), (0, 1), (2, 2))),
+        MultiPolygon(
+            [Polygon(((10, 10), (10, 11), (12, 12))), Polygon(((0, 0), (0, 1), (2, 2)))]
+        ),
+        AxisOrientedCuboid(),
+        Cuboid(),
+        AxisOrientedHypercuboid(),
+    ],
+    ids=lambda region: type(region).__name__,
+)
+def test_points_is_deprecated(region):
+    name = type(region).__name__
+    with pytest.warns(DeprecationWarning) as record:
+        points = region.points
+    assert points is not None
+    assert len(record) == 1
+    assert (
+        str(record[0].message)
+        == f"`{name}.points` is deprecated, use `{name}.vertices` instead."
+    )
+    # the warning points to the code that uses the deprecated attribute
+    assert record[0].filename == __file__
+
+
+@pytest.mark.parametrize(
+    ("cls", "method", "argument", "replacement", "expected"),
+    [
+        (Region, "from_intervals", (0, 2), "locan.get_region_from_intervals", Interval),
+        (
+            Region2D,
+            "from_shapely",
+            shPolygon(((0, 0), (0, 1), (2, 2))),
+            "locan.get_region_from_shapely",
+            Polygon,
+        ),
+        (
+            Rectangle,
+            "from_intervals",
+            ((0, 2), (0, 1)),
+            "AxisOrientedRectangle.from_intervals",
+            AxisOrientedRectangle,
+        ),
+    ],
+)
+def test_deprecated_constructors(cls, method, argument, replacement, expected):
+    message = f"`{cls.__name__}.{method}` is deprecated, use `{replacement}`"
+    with pytest.warns(DeprecationWarning, match=message) as record:
+        region = getattr(cls, method)(argument)
+    assert len(record) == 1
+    assert record[0].filename == __file__
+    assert isinstance(region, expected)
+
+
+@pytest.mark.skipif(not HAS_DEPENDENCY["open3d"], reason="Test requires open3d.")
+def test_Region3D_from_open3d_is_deprecated():
+    open3d_object = o3d.t.geometry.AxisAlignedBoundingBox(
+        min_bound=o3d.core.Tensor([1.0, 1.0, 1.0]),
+        max_bound=o3d.core.Tensor([9.0, 19.0, 29.0]),
+    )
+    message = "`Region3D.from_open3d` is deprecated, use `locan.get_region_from_open3d`"
+    with pytest.warns(DeprecationWarning, match=message) as record:
+        region = Region3D.from_open3d(open3d_object)
+    assert len(record) == 1
+    assert record[0].filename == __file__
+    assert isinstance(region, AxisOrientedCuboid)

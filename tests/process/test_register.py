@@ -5,6 +5,7 @@ import pytest
 
 from locan.dependencies import HAS_DEPENDENCY
 from locan.process.register import (
+    # pyrefly: ignore[deprecated]  # reason: the deprecated function is under test
     _register_cc_picasso,
     _register_cc_skimage,
     register_cc,
@@ -78,15 +79,18 @@ def test__register_cc_picasso(locdata_blobs_2d):
     offset_target = np.array([100.0, 50.0])
     matrix_target = np.array([[1, 0], [0, 1]])
 
-    matrix, offset = _register_cc_picasso(
-        locdata_blobs_2d, locdata_2d_transformed, bin_size=50, verbose=False
-    )
+    message = "`_register_cc_picasso` is deprecated, use `_register_cc_skimage`"
+    with pytest.warns(DeprecationWarning, match=message):
+        matrix, offset = _register_cc_picasso(
+            locdata_blobs_2d, locdata_2d_transformed, bin_size=50, verbose=False
+        )
     assert np.allclose(np.array(offset), offset_target, atol=5)
     assert np.allclose(matrix, matrix_target)
 
-    matrix, offset = _register_cc_picasso(
-        locdata_blobs_2d, locdata_2d_transformed, bin_size=(10, 50), verbose=False
-    )
+    with pytest.warns(DeprecationWarning, match=message):
+        matrix, offset = _register_cc_picasso(
+            locdata_blobs_2d, locdata_2d_transformed, bin_size=(10, 50), verbose=False
+        )
     assert np.allclose(np.array(offset), offset_target, atol=5)
     assert np.allclose(matrix, matrix_target)
 

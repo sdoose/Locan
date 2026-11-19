@@ -38,6 +38,7 @@ from .render_mpl import (
     apply_window as apply_window,
     render_2d_mpl as render_2d_mpl,
     render_2d_rgb_mpl as render_2d_rgb_mpl,
+    # pyrefly: ignore[deprecated]  # reason: exported until it is removed
     render_2d_scatter_density as render_2d_scatter_density,
     scatter_2d_mpl as scatter_2d_mpl,
     scatter_3d_mpl as scatter_3d_mpl,

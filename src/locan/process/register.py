@@ -11,6 +11,7 @@ Parts of this code is adapted from https://github.com/jungmannlab/picasso.
 
 from __future__ import annotations
 
+import sys
 import warnings
 from collections.abc import Sequence
 from functools import wraps
@@ -28,6 +29,11 @@ from locan.process.aggregate import histogram
 from locan.process.bins import Bins
 from locan.process.properties.locdata_statistics import range_from_collection
 from locan.process.transform.spatial.spatial_transformation import _homogeneous_matrix
+
+if sys.version_info >= (3, 13):
+    from warnings import deprecated
+else:
+    from typing_extensions import deprecated
 
 if HAS_DEPENDENCY["open3d"]:
     import open3d as o3d  # type: ignore [missing-import]
@@ -333,6 +339,7 @@ def _get_image_shift(
     return -yc, -xc
 
 
+@deprecated("`_register_cc_picasso` is deprecated, use `_register_cc_skimage` instead.")
 def _register_cc_picasso(
     locdata: npt.ArrayLike | LocData,
     other_locdata: npt.ArrayLike | LocData,
@@ -401,13 +408,6 @@ def _register_cc_picasso(
     Transformation
         Matrix and offset representing the optimized transformation.
     """
-    warnings.warn(
-        "The function _register_cc_picasso is deprecated."
-        "Use _register_cc_skimage instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
     if isinstance(locdata, LocData) and isinstance(other_locdata, LocData):
         bin_range_: (
             tuple[float, float]
@@ -582,6 +582,8 @@ def _register_cc_skimage(
 
 @wraps(_register_cc_skimage)
 def register_cc(*args: Any, **kwargs: Any) -> Transformation:
+    # todo: this warning is emitted on every call and names kwargs
+    # (max_offset, verbose) that register_cc no longer accepts.
     warnings.warn(
         "The function register_cc has been refactored. "
         "The kwargs max_offset and verbose are deprecated . "

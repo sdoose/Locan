@@ -8,6 +8,7 @@ from locan import (  # noqa: F401  # this import is needed for interactive tests
     cluster_dbscan,
     render_2d_mpl,
     render_2d_rgb_mpl,
+    # pyrefly: ignore[deprecated]  # reason: the deprecated function is under test
     render_2d_scatter_density,
     scatter_2d_mpl,
     transform_affine,
@@ -107,7 +108,9 @@ def test_render_2d_scatter_density(locdata_blobs_2d):
     not HAS_DEPENDENCY["mpl_scatter_density"], reason="requires mpl_scatter_density"
 )
 def test_render_2d_scatter_density_empty(locdata_empty):
-    render_2d_scatter_density(locdata_empty)
+    message = "`render_2d_scatter_density` is deprecated, use third-party methods"
+    with pytest.warns(DeprecationWarning, match=message):
+        render_2d_scatter_density(locdata_empty)
     # plt.show()
 
     plt.close("all")

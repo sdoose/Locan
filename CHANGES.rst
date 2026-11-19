@@ -56,6 +56,9 @@ API Changes
   functions), ``track``, ``select_by_region`` and ``Roi.locdata`` hand a region to
   the new ``LocData`` objects without checking again that all localizations are
   within the region; a collection of clusters still checks its centroids
+- deprecated functions, methods and properties are marked with the ``deprecated``
+  decorator (PEP 702), so type checkers and IDEs flag their use; their warnings name
+  the deprecated object and its replacement
 
 Bug Fixes
 ---------
@@ -90,6 +93,9 @@ Bug Fixes
   of warning that the properties could not be computed
 - fix: ``LocalizationPrecision.distribution_statistics.pairwise_distribution`` is
   ``None`` instead of missing when no successive localizations were found
+- fix: ``regions_union``, ``expand_region`` and ``surrounding_region`` no longer emit
+  a ``DeprecationWarning`` for locan's own call of ``Region2D.from_shapely``;
+  ``MultiPolygon.points`` warns once instead of once more for every polygon
 
 Other Changes and Additions
 ---------------------------
@@ -119,6 +125,8 @@ Other Changes and Additions
 - locan.config.n_cpus must be a positive integer, -1 (all CPU cores) or -2 (all CPU cores but one); 0 and values below -2 raise a ValidationError
 - locan.config validates settings on assignment
 - fix the type errors reported by pyrefly 1.5
+- require ``typing_extensions>=4.6``: ``deprecated`` was added in 4.5, and 4.6 is
+  the first release that can be imported on Python 3.12
 
 
 0.22 - 2026-10-17

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import itertools as it
 import logging
-import warnings
+import sys
 from abc import ABC, abstractmethod
 from typing import Any, Self, TypeVar, cast
 
@@ -52,6 +52,11 @@ from shapely.prepared import prep as sh_prep
 
 from locan.dependencies import HAS_DEPENDENCY, needs_package
 from locan.utils.rotation import Rotation2D, Rotation3D
+
+if sys.version_info >= (3, 13):
+    from warnings import deprecated
+else:
+    from typing_extensions import deprecated
 
 if HAS_DEPENDENCY["open3d"]:
     import open3d as o3d  # type: ignore [missing-import]
@@ -272,6 +277,10 @@ class Region(ABC):
         return f"{self.__class__.__name__}(...)"
 
     @staticmethod
+    @deprecated(
+        "`Region.from_intervals` is deprecated, "
+        "use `locan.get_region_from_intervals` instead."
+    )
     def from_intervals(
         intervals: npt.ArrayLike,
     ) -> (
@@ -300,12 +309,6 @@ class Region(ABC):
         -------
         Interval | AxisOrientedRectangle | AxisOrientedCuboid | AxisOrientedHypercuboid
         """
-        warnings.warn(
-            "This function is deprecated. "
-            "Use locan.data.region.region_utils.get_region_from_intervals instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         if np.shape(intervals) == (2,):
             return Interval.from_intervals(intervals)
         elif np.shape(intervals) == (2, 2):
@@ -686,6 +689,11 @@ class Region2D(Region):
         pass
 
     @staticmethod
+    @deprecated(
+        "`Region2D.from_shapely` is deprecated, "
+        "use `locan.get_region_from_shapely` or "
+        "`from_shapely` of a specific region class instead."
+    )
     def from_shapely(
         shapely_object: shLineString | shPolygon | shMultiPolygon,
     ) -> LineSegment2D | Polygon | MultiPolygon | EmptyRegion:
@@ -705,14 +713,6 @@ class Region2D(Region):
         -------
         LineSegment2D | Polygon | MultiPolygon | EmptyRegion
         """
-        warnings.warn(
-            "This function is deprecated. "
-            "Use specific Region2D objects or "
-            "locan.data.regions.region.get_region_from_shapely() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
         ptype = shapely_object.geom_type
         if ptype == "LineString":
             return LineSegment2D.from_shapely(shapely_object)  # type: ignore
@@ -832,6 +832,11 @@ class Region3D(Region):
         return quotient
 
     @staticmethod
+    @deprecated(
+        "`Region3D.from_open3d` is deprecated, "
+        "use `locan.get_region_from_open3d` or "
+        "`from_open3d` of a specific region class instead."
+    )
     def from_open3d(
         open3d_object: (
             o3d.t.geometry.AxisAlignedBoundingBox | o3d.t.geometry.OrientedBoundingBox
@@ -853,14 +858,6 @@ class Region3D(Region):
         -------
         AxisOrientedCuboid | Cuboid | EmptyRegion
         """
-        warnings.warn(
-            "This function is deprecated. "
-            "Use specific Region3D objects or "
-            "locan.data.regions.region.get_region_from_open3d() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
         if isinstance(open3d_object, o3d.t.geometry.AxisAlignedBoundingBox):
             return AxisOrientedCuboid.from_open3d(open3d_object)  # type: ignore
         elif isinstance(open3d_object, o3d.t.geometry.OrientedBoundingBox):
@@ -962,12 +959,10 @@ class EmptyRegion(Region):
         return None
 
     @property
+    @deprecated(
+        "`EmptyRegion.points` is deprecated, use `EmptyRegion.vertices` instead."
+    )
     def points(self) -> npt.NDArray[np.float64]:
-        warnings.warn(
-            "This attribute is deprecated. Use vertices instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return np.array([], dtype=np.float64)
 
     @property
@@ -1159,12 +1154,8 @@ class Interval(Region1D):
         return self._region_specs
 
     @property
+    @deprecated("`Interval.points` is deprecated, use `Interval.vertices` instead.")
     def points(self) -> npt.NDArray[np.float64]:
-        warnings.warn(
-            "This attribute is deprecated. Use vertices instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return np.array([self.lower_bound, self.upper_bound])
 
     @property
@@ -1479,12 +1470,11 @@ class AxisOrientedRectangle(Region2D):
         )
 
     @property
+    @deprecated(
+        "`AxisOrientedRectangle.points` is deprecated, "
+        "use `AxisOrientedRectangle.vertices` instead."
+    )
     def points(self) -> npt.NDArray[np.float64]:
-        warnings.warn(
-            "This attribute is deprecated. Use vertices instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         rectangle = mpl_patches.Rectangle(
             self.corner,  # type: ignore[arg-type]
             self.width,
@@ -1609,6 +1599,10 @@ class Rectangle(Region2D):
         return getattr(self.shapely_object, attr)
 
     @classmethod
+    @deprecated(
+        "`Rectangle.from_intervals` is deprecated, "
+        "use `AxisOrientedRectangle.from_intervals` instead."
+    )
     def from_intervals(
         cls: type[T_Rectangle], intervals: npt.ArrayLike  # noqa: UP006
     ) -> AxisOrientedRectangle:
@@ -1628,13 +1622,6 @@ class Rectangle(Region2D):
         -------
         cls
         """
-        warnings.warn(
-            "This function is deprecated. "
-            "Use AxisOrientedRectangle.from_intervals() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
         intervals = np.asarray(intervals)
         if np.shape(intervals) != (2, 2):
             raise TypeError(
@@ -1705,12 +1692,8 @@ class Rectangle(Region2D):
         return self._rotation
 
     @property
+    @deprecated("`Rectangle.points` is deprecated, use `Rectangle.vertices` instead.")
     def points(self) -> npt.NDArray[np.float64]:
-        warnings.warn(
-            "This attribute is deprecated. Use vertices instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         rectangle = mpl_patches.Rectangle(
             self.corner,  # type: ignore[arg-type]
             self.width,
@@ -1967,12 +1950,8 @@ class Ellipse(Region2D):
         return np.sqrt(1 - (min_ / max_) ** 2)  # type: ignore[no-any-return]
 
     @property
+    @deprecated("`Ellipse.points` is deprecated, use `Ellipse.vertices` instead.")
     def points(self) -> npt.NDArray[np.float64]:
-        warnings.warn(
-            "This attribute is deprecated. Use vertices instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return np.array(self.shapely_object.exterior.coords)[::-1]
 
     @property
@@ -2129,6 +2108,7 @@ class Polygon(Region2D):
             return cls(points, holes)  # type: ignore[arg-type]
 
     @property
+    @deprecated("`Polygon.points` is deprecated, use `Polygon.vertices` instead.")
     def points(self) -> npt.NDArray[np.float64]:
         """
         Exterior polygon points.
@@ -2138,11 +2118,6 @@ class Polygon(Region2D):
         npt.NDArray[np.float64]
             of shape(n_points, dimension)
         """
-        warnings.warn(
-            "This attribute is deprecated. Use vertices instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return self._points
 
     @property
@@ -2273,6 +2248,9 @@ class MultiPolygon(Region2D):
         return getattr(self.shapely_object, attr)
 
     @property
+    @deprecated(
+        "`MultiPolygon.points` is deprecated, use `MultiPolygon.vertices` instead."
+    )
     def points(self) -> list[npt.NDArray[np.float64]]:
         """
         Exterior polygon points.
@@ -2282,12 +2260,7 @@ class MultiPolygon(Region2D):
         list[npt.NDArray[np.float64]]
             n_polygons of shape(n_points, dimension)
         """
-        warnings.warn(
-            "This attribute is deprecated. Use vertices instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return [pol.points for pol in self.polygons]
+        return [pol._points for pol in self.polygons]
 
     @property
     def vertices(self) -> list[npt.NDArray[np.float64]]:
@@ -2748,12 +2721,11 @@ class AxisOrientedCuboid(Region3D):
         return self._height
 
     @property
+    @deprecated(
+        "`AxisOrientedCuboid.points` is deprecated, "
+        "use `AxisOrientedCuboid.vertices` instead."
+    )
     def points(self) -> npt.NDArray[np.float64]:
-        warnings.warn(
-            "This attribute is deprecated. Use vertices instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return np.array(list(it.product(*self.intervals)))
 
     @property
@@ -3089,12 +3061,8 @@ class Cuboid(Region3D):
         return self._gamma
 
     @property
+    @deprecated("`Cuboid.points` is deprecated, use `Cuboid.vertices` instead.")
     def points(self) -> npt.NDArray[np.float64]:
-        warnings.warn(
-            "This attribute is deprecated. Use vertices instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         if self._vertices is None:
             axis_oriented_cuboid = AxisOrientedCuboid(
                 corner=self.corner,
@@ -3292,12 +3260,11 @@ class AxisOrientedHypercuboid(RegionND):
         return len(self.lengths)
 
     @property
+    @deprecated(
+        "`AxisOrientedHypercuboid.points` is deprecated, "
+        "use `AxisOrientedHypercuboid.vertices` instead."
+    )
     def points(self) -> npt.NDArray[np.float64]:
-        warnings.warn(
-            "This attribute is deprecated. Use vertices instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return np.array(list(it.product(*self.intervals)))
 
     @property

@@ -724,6 +724,7 @@ def test_to_boost_histogram_axes() -> None:
 def test_boost_histogram_axes_property_deprecated() -> None:
     bins = Bins.from_n_bins(5, (0, 10))
     with pytest.warns(DeprecationWarning, match="to_boost_histogram_axes"):
+        # pyrefly: ignore[deprecated]  # reason: the deprecated property is under test
         axes = bins.boost_histogram_axes
     assert axes == bins.to_boost_histogram_axes()
 

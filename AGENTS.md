@@ -107,8 +107,12 @@ Grep first and read by line range; do not load whole.
   `Name as Name` re-export to `locan/__init__.pyi` (`uv run python tools/script_make_init.py`
   prints the blocks to paste). `tests/test_locan_init.py` checks `dir(locan)` against `__all__`.
 - Anything exported is a contract. Don't rename/remove it or change its signature incompatibly
-  without a deprecation: `warnings.warn("x is deprecated, use y", DeprecationWarning, stacklevel=2)`,
-  for module attributes via a module-level `__getattr__` (see `visualize/colormap.py`).
+  without a deprecation. Deprecate a function, method or property with the `deprecated`
+  decorator (PEP 702): ``@deprecated("`x` is deprecated, use `y` instead.")``, placed below
+  `@property` / `@staticmethod` / `@classmethod`; copy the version-dependent import block from
+  `process/bins.py`. A keyword or a module attribute cannot be decorated: use
+  `warnings.warn("x is deprecated, use y", DeprecationWarning, stacklevel=2)`, for module
+  attributes via a module-level `__getattr__` (see `visualize/colormap.py`).
   Importing `locan` must emit no `DeprecationWarning` from `locan.*` (tested in
   `tests/test_locan_init.py`).
 

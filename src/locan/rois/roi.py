@@ -39,6 +39,11 @@ from locan.data.regions import region
 from locan.data.regions.region import Region, RoiRegion
 from locan.utils.miscellaneous import _get_subclasses
 
+if sys.version_info >= (3, 13):
+    from warnings import deprecated
+else:
+    from typing_extensions import deprecated
+
 __all__: list[str] = ["Roi", "rasterize", "load_locdata_from_roi_file"]
 
 logger = logging.getLogger(__name__)
@@ -548,6 +553,7 @@ class RoiLegacy_0:
         if isinstance(region_, RoiRegion):
             self._region = region_
 
+    @deprecated("RoiLegacy.to_yaml is deprecated, use Roi.to_yaml instead")
     def to_yaml(self, path=None):  # type: ignore
         """
         Save Roi object in yaml format.
@@ -558,12 +564,6 @@ class RoiLegacy_0:
             Path for yaml file. If None a roi file path is generated from
             the metadata.
         """
-        warnings.warn(
-            "RoiLegacy.to_yaml is deprecated, use Roi.to_yaml instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
         # prepare path
         if path is None and isinstance(self.reference, LocData):
             _file_path = Path(self.reference.meta.file.path)

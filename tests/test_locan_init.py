@@ -13,6 +13,8 @@ from locan.__main__ import main
 def test_import_emits_no_locan_deprecation_warnings():
     # A fresh interpreter is needed: import-time warnings fire only once.
     # Only warnings attributed to locan modules are turned into errors.
+    # todo: the module field of -W is an exact match, so this covers warnings
+    # attributed to `locan` itself but not those attributed to its submodules.
     code = "import locan; import locan.visualize; locan.LocData"
     exit_status = subprocess.run(  # noqa: S603
         [sys.executable, "-W", "error::DeprecationWarning:locan", "-c", code],

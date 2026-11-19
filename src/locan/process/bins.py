@@ -21,6 +21,7 @@ last edge is not contained in the last bin.
 
 from __future__ import annotations
 
+import sys
 import warnings
 from collections.abc import Iterable, Sequence
 from functools import cached_property
@@ -30,6 +31,11 @@ from typing import Any, Literal
 import boost_histogram as bh
 import numpy as np
 import numpy.typing as npt
+
+if sys.version_info >= (3, 13):
+    from warnings import deprecated
+else:
+    from typing_extensions import deprecated
 
 __all__: list[str] = ["Bins"]
 
@@ -847,19 +853,17 @@ class Bins:
         return tuple(value for bin_range in self.bin_range for value in bin_range)
 
     @property
+    @deprecated(
+        "`Bins.boost_histogram_axes` is deprecated, "
+        "use `Bins.to_boost_histogram_axes()`."
+    )
     def boost_histogram_axes(self) -> bh.axis.AxesTuple:
         """
         Axis definitions for boost-histogram.
 
-        .. deprecated::
+        .. deprecated:: 0.23
             Use :meth:`to_boost_histogram_axes` instead.
         """
-        warnings.warn(
-            "`Bins.boost_histogram_axes` is deprecated, "
-            "use `Bins.to_boost_histogram_axes()`.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         return self.to_boost_histogram_axes()
 
     # --- methods ----------------------------------------------------------

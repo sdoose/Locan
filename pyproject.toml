@@ -76,7 +76,7 @@ dependencies = [
     "tifffile",
     "tomli-w>=1.2.0",
     "tqdm",
-    "typing_extensions",
+    "typing_extensions>=4.6",
 ]
 
 [project.optional-dependencies]

@@ -245,6 +245,7 @@ from .visualize import (
     render_2d_napari_image as render_2d_napari_image,
     render_2d_rgb_mpl as render_2d_rgb_mpl,
     render_2d_rgb_napari as render_2d_rgb_napari,
+    # pyrefly: ignore[deprecated]  # reason: exported until it is removed
     render_2d_scatter_density as render_2d_scatter_density,
     render_3d as render_3d,
     render_3d_napari as render_3d_napari,

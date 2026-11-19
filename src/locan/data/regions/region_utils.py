@@ -27,6 +27,7 @@ from locan.data.regions.region import (
     Region,
     Region2D,
     RoiRegion,
+    get_region_from_shapely,
 )
 from locan.dependencies import HAS_DEPENDENCY
 
@@ -97,7 +98,8 @@ def regions_union(regions: list[Region]) -> EmptyRegion | Region2D:
         if unified_regions.is_empty:
             return EmptyRegion()
         else:
-            return Region2D.from_shapely(unified_regions)  # type: ignore
+            # pyrefly: ignore[bad-argument-type]  # reason: typed as BaseGeometry
+            return get_region_from_shapely(unified_regions)
     else:
         raise NotImplementedError("regions must all be Region2D")
 
@@ -138,7 +140,8 @@ def expand_region(
         expanded_region = support.intersection(expanded_region)
 
     try:
-        return Region2D.from_shapely(expanded_region)  # type: ignore
+        # pyrefly: ignore[bad-argument-type]  # reason: Region2D acts as shapely object
+        return get_region_from_shapely(expanded_region)
     except AttributeError:
         return expanded_region
 
@@ -176,6 +179,7 @@ def surrounding_region(
     )
     if isinstance(extended_region, Region2D | RoiRegion):
         surrounding_region_ = extended_region.symmetric_difference(region)
-        return Region2D.from_shapely(surrounding_region_)  # type: ignore
+        # pyrefly: ignore[bad-argument-type]  # reason: Region2D acts as shapely object
+        return get_region_from_shapely(surrounding_region_)
     else:
         raise NotImplementedError("Only 2-dimensional function has been implemented.")

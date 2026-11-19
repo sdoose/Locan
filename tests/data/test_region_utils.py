@@ -1,3 +1,5 @@
+import warnings
+
 import matplotlib.pyplot as plt  # needed for visual inspection
 import numpy as np
 import pytest
@@ -367,3 +369,21 @@ def test_surrounding_region():
     # plt.show()
 
     plt.close("all")
+
+
+@pytest.mark.parametrize(
+    "function",
+    [
+        lambda region: regions_union([region, Rectangle((2, 2), 1, 1, 0)]),
+        lambda region: expand_region(region, distance=1),
+        lambda region: surrounding_region(region, distance=1),
+    ],
+    ids=["regions_union", "expand_region", "surrounding_region"],
+)
+def test_region_utils_use_no_deprecated_api(function):
+    region = Rectangle((0, 0), 1, 1, 0)
+    with warnings.catch_warnings():
+        # only warnings attributed to locan modules are turned into errors
+        warnings.filterwarnings("error", category=DeprecationWarning, module="locan")
+        new_region = function(region)
+    assert isinstance(new_region, Region)

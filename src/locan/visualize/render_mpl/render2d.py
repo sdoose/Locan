@@ -7,7 +7,7 @@ This module provides functions for rendering locdata objects in 2D.
 from __future__ import annotations
 
 import logging
-import warnings
+import sys
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -27,6 +27,11 @@ from locan.process.properties import ranges
 from locan.rois.roi import Roi, _MplSelector
 from locan.visualize.colormap import ColormapType, get_colormap
 from locan.visualize.transform import adjust_contrast
+
+if sys.version_info >= (3, 13):
+    from warnings import deprecated
+else:
+    from typing_extensions import deprecated
 
 if HAS_DEPENDENCY["mpl_scatter_density"]:
     import mpl_scatter_density  # type: ignore [missing-import]
@@ -185,6 +190,10 @@ def render_2d_mpl(
     return ax
 
 
+@deprecated(
+    "`render_2d_scatter_density` is deprecated, "
+    "use third-party methods like datashader instead."
+)
 def render_2d_scatter_density(
     locdata: LocData,
     loc_properties: list[str] | None = None,
@@ -253,13 +262,6 @@ def render_2d_scatter_density(
     """
     if not HAS_DEPENDENCY["mpl_scatter_density"]:
         raise ImportError("mpl-scatter-density is required.")
-
-    warnings.warn(
-        "This function is deprecated. "
-        "Use third-party methods like datashader instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
 
     # Provide matplotlib.axes.Axes if not provided
     if ax is None:
