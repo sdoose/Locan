@@ -140,7 +140,7 @@ class Colormap:
 
     @property
     @needs_package("napari")
-    def napari(self) -> napari.utils.Colormap:
+    def napari(self) -> NapariColormap:
         if self._napari is None:
             if self._matplotlib is not None:
                 try:

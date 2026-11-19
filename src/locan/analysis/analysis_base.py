@@ -7,7 +7,7 @@ It also provides helper functions to be used in specialized analysis classes.
 from __future__ import annotations
 
 from copy import copy
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 
 from google.protobuf import json_format
 from scipy import stats
@@ -38,7 +38,7 @@ class _Analysis:
         Computed results.
     """
 
-    count: int = 0
+    count: ClassVar[int] = 0
     """A counter for counting Analysis class instantiations (class attribute)."""
 
     def __init__(

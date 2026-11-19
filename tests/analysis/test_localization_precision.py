@@ -165,6 +165,13 @@ class Test_Distribution_fits:
         distribution_statistics.plot()
 
 
+def test_Distribution_fits_no_successive_localizations(locdata_single_localization):
+    lp = LocalizationPrecision().compute(locdata=locdata_single_localization)
+    assert lp.results.empty
+    lp.fit_distributions()
+    assert lp.distribution_statistics.pairwise_distribution is None
+
+
 def test_Distribution_fits_1d(locdata_simple_1d):
     # print(locdata_simple.data)
     lp = LocalizationPrecision().compute(locdata=locdata_simple_1d)

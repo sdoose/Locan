@@ -658,9 +658,8 @@ class _DistributionFits:
         self.parameters: list[str] = []
 
         # continuous distributions
-        if self.analysis_class.results is None:
-            self.pairwise_distribution = None
-        else:
+        self.pairwise_distribution: stats.rv_continuous | None = None
+        if self.analysis_class.results is not None:
             delta_columns = [
                 c for c in self.analysis_class.results.columns if "position_delta" in c
             ]
