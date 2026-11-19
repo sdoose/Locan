@@ -7,6 +7,7 @@ import pytest
 from locan import (
     Bins,
     LocData,
+    Rectangle,
     cluster_by_bin,
     cluster_by_radius,
     cluster_dbscan,
@@ -187,6 +188,40 @@ def test_cluster_dbscan_empty_locdata(
     noise, clust = cluster_dbscan(locdata, eps=2, min_samples=2)
     assert len(noise) == expected[0]
     assert len(clust) == expected[1]
+
+
+@pytest.mark.parametrize(
+    "cluster_function, kwargs",
+    [
+        (cluster_hdbscan, dict(min_cluster_size=3)),
+        (cluster_dbscan, dict(eps=2, min_samples=2)),
+    ],
+)
+@pytest.mark.parametrize(
+    "region, n_warnings",
+    [
+        pytest.param(Rectangle((0, 0), 10, 10, 0), 0, id="noise_outside"),
+        pytest.param(Rectangle((0, 0), 2, 2, 0), 1, id="centroid_outside"),
+    ],
+)
+def test_cluster_checks_region_for_centroids_only(
+    locdata_two_cluster_with_noise_2d,
+    caplog,
+    cluster_function,
+    kwargs,
+    region,
+    n_warnings,
+):
+    locdata = deepcopy(locdata_two_cluster_with_noise_2d)
+    locdata.region = region
+    caplog.clear()
+    noise, clust = cluster_function(locdata, **kwargs)
+    assert len(noise) == 1
+    assert len(clust) == 2
+    assert noise.region is region
+    assert clust.region is region
+    messages = [record.message for record in caplog.records]
+    assert messages.count("Not all coordinates are within region.") == n_warnings
 
 
 # tests serial_clustering

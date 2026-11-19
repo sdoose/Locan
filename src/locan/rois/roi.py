@@ -411,7 +411,7 @@ class Roi:
                 locdata=locdata, indices=locdata_indices_to_keep
             )
             if pfr == new_locdata.coordinate_keys:
-                new_locdata.region = self._region
+                new_locdata.set_region(self._region, check=False)
             else:
                 new_locdata.region = None
 

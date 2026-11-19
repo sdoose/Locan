@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from locan import AlphaShape, LocData, Rectangle, Region
+from locan import AlphaShape, Interval, LocData, Rectangle, Region
 from locan.data import metadata_pb2
 
 # fixtures for DataFrames (fixtures for LocData are defined in conftest.py)
@@ -689,6 +689,28 @@ def test_locdata_region(df_simple):
     assert dat.region.region_measure == 2
 
 
+@pytest.mark.parametrize(
+    "kwargs, n_warnings",
+    [({}, 0), ({"check": False}, 0), ({"check": True}, 1)],
+)
+def test_locdata_set_region(df_simple, caplog, kwargs, n_warnings):
+    region = Rectangle((0, 0), 2, 1, 10)
+    dat = LocData.from_dataframe(dataframe=df_simple)
+    assert dat.set_region(region, **kwargs) is dat
+    assert dat.region is region
+    assert dat.properties["region_measure"] == 2
+    assert dat.properties["subregion_measure"] == 6
+    assert dat.properties["localization_density"] == 2.5
+    messages = [record.message for record in caplog.records]
+    assert messages.count("Not all coordinates are within region.") == n_warnings
+
+
+def test_locdata_set_region_with_wrong_dimension(df_simple):
+    dat = LocData.from_dataframe(dataframe=df_simple)
+    with pytest.raises(TypeError, match="dimension"):
+        dat.set_region(Interval(0, 1))
+
+
 # standard LocData fixtures
 
 
@@ -800,6 +822,17 @@ def test_locdata_from_selection_with_single_index(locdata_non_standard_index):
 def test_locdata_from_selection_selects_all_by_default(locdata_non_standard_index):
     sel = LocData.from_selection(locdata=locdata_non_standard_index)
     assert list(sel.data.index) == [2, 1, 5, 10, 100, 200]
+
+
+def test_locdata_from_selection_does_not_check_region(df_simple, caplog):
+    dat = LocData.from_dataframe(dataframe=df_simple)
+    dat.region = Rectangle((0, 0), 2, 1, 10)
+    caplog.clear()
+    sel = LocData.from_selection(locdata=dat, indices=[2, 3])
+    assert sel.region is dat.region
+    assert sel.properties["region_measure"] == 2
+    messages = [record.message for record in caplog.records]
+    assert "Not all coordinates are within region." not in messages
 
 
 def test_locdata_selection_is_computed_once(locdata_2d, monkeypatch):
@@ -1165,14 +1198,14 @@ def test_locdata__from_groups(df_groups, modify, counts):
 
 
 @pytest.mark.parametrize(
-    "region, n_warnings",
+    "region",
     [
-        (Rectangle((-1, -1), 30, 30, 0), 0),
-        (Rectangle((-1, -1), 15, 15, 0), 1),
-        (Rectangle((0, 0), 0, 30, 0), 1),
+        Rectangle((-1, -1), 30, 30, 0),
+        Rectangle((-1, -1), 15, 15, 0),
+        Rectangle((0, 0), 0, 30, 0),
     ],
 )
-def test_locdata__from_groups_with_region(df_groups, caplog, region, n_warnings):
+def test_locdata__from_groups_with_region(df_groups, caplog, region):
     locdata = LocData.from_dataframe(dataframe=df_groups)
     locdata.region = region
     labels = pd.Series(GROUP_LABELS, index=locdata.data.index)
@@ -1181,7 +1214,7 @@ def test_locdata__from_groups_with_region(df_groups, caplog, region, n_warnings)
     caplog.clear()
     collection = LocData._from_groups(locdata=locdata, labels=labels)
     messages = [record.message for record in caplog.records]
-    assert messages.count("Not all coordinates are within region.") == n_warnings
+    assert "Not all coordinates are within region." not in messages
     assert_same_selections(collection, expected)
     assert collection.references[0].region is region
 

@@ -19,6 +19,8 @@ New Features
   ``LocData`` reference for each track
 - ``cluster_by_radius`` collects the localizations within a radius of given
   positions as clusters
+- ``LocData.set_region`` sets the region with an optional check that all
+  localizations are within the region
 
 API Changes
 -----------
@@ -50,6 +52,10 @@ API Changes
   uncertainties (previously missing), ``intensity`` and ``region_measure_bb``
   (previously 0)
 - ``inertia_moments`` raises ``TypeError`` for fewer than two points
+- ``LocData.from_selection`` (and with it ``LocData.from_chunks`` and the cluster
+  functions), ``track``, ``select_by_region`` and ``Roi.locdata`` hand a region to
+  the new ``LocData`` objects without checking again that all localizations are
+  within the region; a collection of clusters still checks its centroids
 
 Bug Fixes
 ---------
@@ -82,6 +88,8 @@ Bug Fixes
 - fix: ``LocData.centroid`` raised ``KeyError`` for an empty ``LocData``
 - fix: ``LocData.inertia_moments`` raised for fewer than two localizations instead
   of warning that the properties could not be computed
+- fix: ``LocalizationPrecision.distribution_statistics.pairwise_distribution`` is
+  ``None`` instead of missing when no successive localizations were found
 
 Other Changes and Additions
 ---------------------------
@@ -110,6 +118,7 @@ Other Changes and Additions
 - LocalizationPrecision.compute is vectorised (a single KD-tree query instead of a loop over frames and pairs).
 - locan.config.n_cpus must be a positive integer, -1 (all CPU cores) or -2 (all CPU cores but one); 0 and values below -2 raise a ValidationError
 - locan.config validates settings on assignment
+- fix the type errors reported by pyrefly 1.5
 
 
 0.22 - 2026-10-17

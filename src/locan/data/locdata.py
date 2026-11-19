@@ -575,12 +575,44 @@ class LocData:
 
     @region.setter
     def region(self, region: Region | None) -> None:
+        self.set_region(region, check=True)
+
+    def set_region(self, region: Region | None, check: bool = False) -> Self:
+        """
+        Set the region that supports all localizations and update the
+        properties `region_measure`, `localization_density` and
+        `subregion_measure`.
+
+        Assigning to :attr:`region` is the same as calling this method with
+        `check=True`.
+
+        Parameters
+        ----------
+        region
+            The region that supports all localizations.
+        check
+            If True, a warning is logged if not all localizations are
+            within `region`. The check tests every localization; it can be
+            omitted if `region` is known to contain all localizations, e.g.
+            for a selection of a LocData object with the same region.
+
+        Returns
+        -------
+        Self
+            The modified object
+
+        Raises
+        ------
+        TypeError
+            If the dimension of `region` is not the dimension of the
+            localization coordinates.
+        """
         if region is not None:
             if region.dimension != self.dimension:
                 raise TypeError(
                     "Region dimension and coordinates dimension must be identical."
                 )
-            elif len(self) != len(region.contains(self.coordinates)):
+            elif check and len(self) != len(region.contains(self.coordinates)):
                 logger.warning("Not all coordinates are within region.")
 
         if isinstance(region, Region | RoiRegion) or region is None:
@@ -595,7 +627,7 @@ class LocData:
                     raise TypeError(
                         "Region dimension and coordinates dimension must be identical."
                     )
-                elif len(self) != len(region_.contains(self.coordinates)):
+                elif check and len(self) != len(region_.contains(self.coordinates)):
                     logger.warning("Not all coordinates are within region.")
             # pyrefly: ignore [bad-assignment]
             self._region = region_
@@ -612,6 +644,7 @@ class LocData:
                 )
             if self._region.subregion_measure:
                 self.properties["subregion_measure"] = self._region.subregion_measure
+        return self
 
     @property
     def data(self) -> pd.DataFrame:
@@ -914,7 +947,8 @@ class LocData:
         meta_ = merge_metadata(metadata=meta_, other_metadata=meta)
 
         new_locdata = cls(references=references, indices=indices, meta=meta_)
-        new_locdata.region = references.region
+        # a selection is within any region that contains its references
+        new_locdata.set_region(references.region, check=False)
         return new_locdata
 
     @classmethod
@@ -1094,10 +1128,6 @@ class LocData:
         else:
             region = locdata.region
             if region is not None:
-                is_inside = np.zeros(len(data), dtype=bool)
-                is_inside[region.contains(locdata.coordinates)] = True
-                if not is_inside[positions].all():
-                    logger.warning("Not all coordinates are within region.")
                 if region.region_measure:
                     properties["region_measure"] = np.full(
                         len(starts), region.region_measure

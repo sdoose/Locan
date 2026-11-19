@@ -123,7 +123,7 @@ def cluster_hdbscan(
 
     # set regions
     if locdata_noise:
-        locdata_noise.region = locdata.region
+        locdata_noise.set_region(locdata.region, check=False)
     if collection:
         collection.region = locdata.region
 
@@ -221,7 +221,7 @@ def cluster_dbscan(
 
     # set regions
     if locdata_noise:
-        locdata_noise.region = locdata.region
+        locdata_noise.set_region(locdata.region, check=False)
     if collection:
         collection.region = locdata.region
 

@@ -227,7 +227,7 @@ def select_by_region(
         new_locdata = LocData.from_selection(
             locdata=locdata, indices=locdata_indices_to_keep
         )
-        new_locdata.region = region
+        new_locdata.set_region(region, check=False)
     else:
         raise NotImplementedError("Only Region2D has been implemented.")
 
