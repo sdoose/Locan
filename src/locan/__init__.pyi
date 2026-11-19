@@ -162,6 +162,7 @@ from .process import (
     Selector as Selector,
     bunwarp as bunwarp,
     cluster_by_bin as cluster_by_bin,
+    cluster_by_radius as cluster_by_radius,
     cluster_dbscan as cluster_dbscan,
     cluster_hdbscan as cluster_hdbscan,
     distance_to_point as distance_to_point,

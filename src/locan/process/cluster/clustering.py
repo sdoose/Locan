@@ -10,10 +10,13 @@ import logging
 import sys
 from collections.abc import Sequence
 from copy import copy
+from itertools import chain
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
+from scipy.spatial import KDTree
 
 # pyrefly: ignore [missing-module-attribute]
 from sklearn.cluster import DBSCAN, HDBSCAN
@@ -27,7 +30,12 @@ from locan.process.bins import Bins
 if TYPE_CHECKING:
     import boost_histogram as bh
 
-__all__: list[str] = ["cluster_hdbscan", "cluster_dbscan", "cluster_by_bin"]
+__all__: list[str] = [
+    "cluster_hdbscan",
+    "cluster_dbscan",
+    "cluster_by_bin",
+    "cluster_by_radius",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -374,3 +382,180 @@ def cluster_by_bin(
         counts = None
 
     return bins, bin_indices, collection, counts
+
+
+def cluster_by_radius(
+    locdata: LocData,
+    positions: npt.ArrayLike,
+    radius: float,
+    min_samples: int = 1,
+    loc_properties: list[str] | None = None,
+    *,
+    exclusive: bool = False,
+    reduce: bool = False,
+    return_noise: bool = False,
+) -> tuple[LocData | None, LocData, npt.NDArray[np.int64]]:
+    """
+    Cluster localizations in locdata by collecting all localizations within
+    `radius` of each position as cluster.
+
+    A localization at a distance equal to `radius` is within radius.
+    A localization within radius of more than one position is part of each
+    of these clusters unless `exclusive` is true.
+
+    Parameters
+    ----------
+    locdata
+        Localization data.
+    positions
+        Cluster centers with shape (n_positions, n_loc_properties),
+        e.g. the `coordinates` of another LocData object.
+    radius
+        The maximum distance between a position and a localization for the
+        localization to be part of the cluster.
+    min_samples
+        The minimum number of localizations within radius of a position to
+        be considered as cluster.
+    loc_properties
+        The LocData properties to be used for clustering.
+        If None, `locdata.coordinates` will be used.
+    exclusive
+        If true, each localization is part of the cluster of its nearest
+        position only. For equal distances one of the positions is taken.
+    reduce
+        Return the reduced LocData object or keep references alive.
+        The reduced object carries the properties of all clusters but no
+        references to a selection of localizations for each cluster;
+        setting it up is faster for a large number of clusters.
+    return_noise
+        If true, noise is returned.
+
+    Returns
+    -------
+    tuple[LocData | None, LocData, npt.NDArray[np.int64]]
+        A tuple with noise, cluster and position_indices.
+        The first element is a selection of all localizations that are
+        defined as noise, in other words all localizations that are not part
+        of any cluster. It is None if `return_noise` is false.
+        The second element is a LocData instance assembling all generated
+        selections (i.e. localization cluster).
+        The third element holds for each cluster the index of the
+        corresponding element in `positions`.
+
+    Raises
+    ------
+    ValueError
+        If `min_samples` is smaller than one or if the shape of `positions`
+        does not fit the number of `loc_properties`.
+
+    Examples
+    --------
+    >>> import locan as lc
+    >>> locdata = lc.LocData.from_coordinates(
+    ...     [(0, 0), (1, 0), (10, 10), (50, 50)]
+    ... )
+    >>> noise, collection, position_indices = lc.cluster_by_radius(
+    ...     locdata, positions=[(0, 0), (30, 30), (10, 10)], radius=2
+    ... )
+    >>> collection.data.localization_count.tolist()
+    [2, 1]
+    >>> position_indices.tolist()
+    [0, 2]
+    """
+    # converted before locals() is taken: the history records the abbreviated
+    # string of an array instead of the full string of a long list
+    positions = np.asarray(positions, dtype=np.float64)
+    parameter = locals()
+
+    if min_samples < 1:
+        raise ValueError(f"`min_samples` must be at least 1, got {min_samples}.")
+
+    if len(locdata) == 0:
+        return (
+            LocData() if return_noise else None,
+            LocData(),
+            np.array([], dtype=np.int64),
+        )
+
+    loc_properties = _check_loc_properties(locdata, loc_properties)
+    points = locdata.data[loc_properties].to_numpy()
+
+    # labels and data_positions refer to rows in positions and points
+    if positions.size == 0:
+        n_positions = 0
+        labels = np.array([], dtype=np.int64)
+        data_positions = np.array([], dtype=np.int64)
+    elif positions.ndim != 2 or positions.shape[1] != len(loc_properties):
+        raise ValueError(
+            f"`positions` must have shape (n_positions, {len(loc_properties)}), "
+            f"got {positions.shape}."
+        )
+    else:
+        n_positions = len(positions)
+        tree = KDTree(positions)
+        if exclusive:
+            _, nearest = tree.query(
+                points,
+                k=1,
+                # the bound of KDTree.query is exclusive, radius is inclusive
+                distance_upper_bound=np.nextafter(radius, np.inf),
+            )
+            data_positions = np.flatnonzero(nearest < n_positions)
+            labels = nearest[data_positions]
+        else:
+            other_tree = KDTree(points)
+            neighbors = tree.query_ball_tree(other=other_tree, r=radius)
+            n_neighbors = np.fromiter(
+                (len(neighbors_) for neighbors_ in neighbors),
+                dtype=np.int64,
+                count=n_positions,
+            )
+            labels = np.repeat(np.arange(n_positions), n_neighbors)
+            data_positions = np.fromiter(
+                chain.from_iterable(neighbors),
+                dtype=np.int64,
+                count=n_neighbors.sum(),
+            )
+            # query_ball_tree returns the neighbors of a position in
+            # arbitrary order; labels are sorted already
+            data_positions = data_positions[np.lexsort((data_positions, labels))]
+
+    counts = np.bincount(labels, minlength=n_positions)
+    position_indices = np.flatnonzero(counts >= min_samples)
+    is_kept = counts[labels] >= min_samples
+
+    # data_positions are positions, selections take index labels
+    index = locdata.data.index
+    collection = LocData._from_groups(
+        locdata=locdata,
+        labels=pd.Series(labels[is_kept], index=index[data_positions[is_kept]]),
+        reduce=reduce,
+    )
+
+    locdata_noise = None
+    if return_noise:
+        is_noise = np.ones(len(index), dtype=bool)
+        is_noise[data_positions[is_kept]] = False
+        if is_noise.any():
+            locdata_noise = LocData.from_selection(
+                locdata=locdata, indices=index[is_noise]
+            )
+        else:
+            locdata_noise = LocData()
+
+    # set regions
+    if collection:
+        collection.region = locdata.region
+
+    # metadata
+    if locdata_noise:
+        del locdata_noise.meta.history[:]
+        locdata_noise.meta.history.add(
+            name=sys._getframe().f_code.co_name, parameter=str(parameter)
+        )
+    del collection.meta.history[:]
+    collection.meta.history.add(
+        name=sys._getframe().f_code.co_name, parameter=str(parameter)
+    )
+
+    return locdata_noise, collection, position_indices

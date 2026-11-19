@@ -17,6 +17,8 @@ New Features
   ``with_labels()``, ``isclose()``, ``__eq__`` and ``__repr__``
 - ``track`` takes ``reduce=True`` to return the collection of tracks without a
   ``LocData`` reference for each track
+- ``cluster_by_radius`` collects the localizations within a radius of given
+  positions as clusters
 
 API Changes
 -----------

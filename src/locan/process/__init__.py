@@ -31,6 +31,7 @@ from locan.process.aggregate import *
 from locan.process.bins import *
 from locan.process.cluster import (
     cluster_by_bin as cluster_by_bin,
+    cluster_by_radius as cluster_by_radius,
     cluster_dbscan as cluster_dbscan,
     cluster_hdbscan as cluster_hdbscan,
     serial_clustering as serial_clustering,
