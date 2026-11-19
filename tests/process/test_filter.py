@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt  # needed for visual inspection  # noqa: F401
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.spatial.distance import cdist, pdist
 
 import locan.data.metadata_pb2
 from locan import (
@@ -22,6 +23,7 @@ from locan import (
     select_by_condition,
     select_by_image_mask,
     select_by_region,
+    thin_by_distance,
     transform_affine,
 )
 
@@ -138,6 +140,135 @@ def test_random_subset(locdata_simple):
     # dat_s.print_meta()
     # print(dat_s.data)
     # print(dat_s.meta)
+
+
+# tests thin_by_distance
+
+
+def _thin_sequentially(points, min_distance, order):
+    """Positions of the points that remain according to the definition."""
+    kept = []
+    for position in order:
+        distances = np.linalg.norm(points[kept] - points[position], axis=1)
+        if np.all(distances > min_distance):
+            kept.append(position)
+    return sorted(kept)
+
+
+def test_thin_by_distance(locdata_simple):
+    locdata = LocData.from_coordinates([(0, 0), (1, 0), (2, 0), (10, 10)])
+    thinned = thin_by_distance(locdata, min_distance=1.5, order=[0, 1, 2, 3])
+    assert thinned.data.index.tolist() == [0, 2, 3]
+    thinned = thin_by_distance(locdata, min_distance=1.5, order=[1, 0, 2, 3])
+    assert thinned.data.index.tolist() == [1, 3]
+    assert len(locdata) == 4
+
+    # locdata_simple carries the index labels [2, 0, 1, 3, 4, 5, 6, 7]
+    thinned = thin_by_distance(locdata_simple, min_distance=2, order=np.arange(8))
+    assert thinned.data.index.tolist() == [2, 1, 4, 5, 6, 7]
+    thinned = thin_by_distance(locdata_simple, min_distance=2, order=np.arange(8)[::-1])
+    assert thinned.data.index.tolist() == [0, 3, 4, 5, 6, 7]
+    assert thinned.references is locdata_simple
+    assert thinned.meta.history[-1].name == "thin_by_distance"
+
+
+@pytest.mark.parametrize(
+    "min_distance, expected", [(5, [0, 2]), (4.9, [0, 1, 2]), (0, [0, 1, 2])]
+)
+def test_thin_by_distance_min_distance_is_exclusive(min_distance, expected):
+    # successive distances are 5, 5 and 0
+    locdata = LocData.from_coordinates([(0, 0), (3, 4), (6, 8), (6, 8)])
+    thinned = thin_by_distance(locdata, min_distance=min_distance, order=[0, 1, 2, 3])
+    assert thinned.data.index.tolist() == expected
+
+
+@pytest.mark.parametrize(
+    "n_points, n_dimensions, min_distance",
+    [
+        (3000, 2, 0.01),  # few localizations within min_distance
+        (3000, 2, 0.1),  # many localizations within min_distance
+        (5000, 2, 0.8),  # most localizations within min_distance
+        (3000, 3, 0.2),
+    ],
+)
+@pytest.mark.parametrize("random_order", [True, False])
+def test_thin_by_distance_equals_definition(
+    n_points, n_dimensions, min_distance, random_order
+):
+    rng = np.random.default_rng(seed=1)
+    points = rng.random((n_points, n_dimensions))
+    locdata = LocData.from_coordinates(points)
+    order = rng.permutation(n_points) if random_order else np.arange(n_points)
+
+    thinned = thin_by_distance(locdata, min_distance=min_distance, order=order)
+    expected = _thin_sequentially(points, min_distance, order)
+    assert 0 < len(expected) < n_points
+    assert thinned.data.index.tolist() == expected
+
+
+def test_thin_by_distance_random_order():
+    rng = np.random.default_rng(seed=1)
+    points = rng.random((1000, 2))
+    locdata = LocData.from_coordinates(points)
+
+    thinned = thin_by_distance(locdata, min_distance=0.05, seed=1)
+    assert 0 < len(thinned) < len(locdata)
+    assert pdist(thinned.coordinates).min() > 0.05
+    excluded = np.delete(points, thinned.data.index, axis=0)
+    assert cdist(excluded, thinned.coordinates).min(axis=1).max() <= 0.05
+
+    thinned_again = thin_by_distance(locdata, min_distance=0.05, seed=1)
+    assert thinned_again.data.index.equals(thinned.data.index)
+    thinned_other = thin_by_distance(locdata, min_distance=0.05, seed=2)
+    assert not thinned_other.data.index.equals(thinned.data.index)
+
+
+def test_thin_by_distance_loc_properties(locdata_simple):
+    thinned = thin_by_distance(locdata_simple, min_distance=1, order=np.arange(8))
+    assert len(thinned) == 8
+
+    # the localizations (0, 0, 0) and (0, 1, 4) are close in x and y only
+    thinned = thin_by_distance(
+        locdata_simple,
+        min_distance=1,
+        order=np.arange(8),
+        loc_properties=["position_x", "position_y"],
+    )
+    assert thinned.data.index.tolist() == [2, 0, 1, 3, 5, 6, 7]
+
+
+@pytest.mark.parametrize(
+    "order, expected",
+    [
+        ([3, 1], [1, 3]),  # localizations that are not listed are excluded
+        ([3, 2, 3, 0], [0, 2, 3]),
+        ([], []),
+    ],
+)
+def test_thin_by_distance_order_subset(order, expected):
+    locdata = LocData.from_coordinates([(0, 0), (1, 0), (2, 0), (10, 10)])
+    thinned = thin_by_distance(locdata, min_distance=1.5, order=order)
+    assert thinned.data.index.tolist() == expected
+
+
+def test_thin_by_distance_empty_locdata():
+    thinned = thin_by_distance(LocData(), min_distance=1)
+    assert len(thinned) == 0
+
+
+@pytest.mark.parametrize(
+    "kwargs, error",
+    [
+        ({"min_distance": -1}, ValueError),
+        ({"min_distance": 1, "order": [0.0, 1.0]}, TypeError),
+        ({"min_distance": 1, "order": [True, False, True, False]}, TypeError),
+        ({"min_distance": 1, "order": [[0, 1]]}, TypeError),
+    ],
+)
+def test_thin_by_distance_raises(kwargs, error):
+    locdata = LocData.from_coordinates([(0, 0), (1, 0), (2, 0), (10, 10)])
+    with pytest.raises(error):
+        thin_by_distance(locdata, **kwargs)
 
 
 def test_localizations_in_cluster_regions(locdata_blobs_2d):

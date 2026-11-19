@@ -14,6 +14,8 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
+from scipy.spatial import KDTree
 from sklearn.neighbors import NearestNeighbors
 
 from locan import cluster_by_bin, config
@@ -36,8 +38,19 @@ __all__: list[str] = [
     "select_by_image_mask",
     "exclude_sparse_points",
     "random_subset",
+    "thin_by_distance",
     "localizations_in_cluster_regions",
 ]
+
+# Tuning of _thin_points for speed and memory; the result does not depend on it.
+# Number of points from which the mean number of neighbors is estimated.
+_N_SAMPLES: int = 4096
+# Mean number of neighbors up to which all close pairs are computed at once.
+_MAX_MEAN_NEIGHBORS: int = 10
+# Number of points visited per batch if neighbors are queried in batches.
+_N_VISITS: int = 512
+# Number of neighbors per batch above which a batch is shortened.
+_MAX_NEIGHBORS: int = 2**20
 
 
 class Selector:
@@ -436,6 +449,203 @@ def random_subset(
         meta=None,
     )
     new_locdata = LocData.from_selection(locdata, indices, meta=meta_)
+
+    return new_locdata
+
+
+def _thin_points(
+    points: npt.NDArray[np.float64],
+    min_distance: float,
+    order: npt.NDArray[np.int64],
+) -> npt.NDArray[np.int64]:
+    """
+    Visit points in the given order, keep each visited point that has not
+    been removed and remove all points within `min_distance` of it.
+
+    Neighbors are only needed for the points that are kept.
+    If points have few neighbors, all close pairs are computed in one query.
+    Otherwise most points are removed before they are visited and neighbors
+    are queried in batches for the points that are left.
+
+    Parameters
+    ----------
+    points
+        Coordinates with shape (n_points, n_dimensions).
+    min_distance
+        The distance up to which neighbors of a kept point are removed.
+    order
+        Positions of points in the sequence in which they are visited.
+
+    Returns
+    -------
+    npt.NDArray[np.int64]
+        Positions of the kept points in the sequence given by `order`.
+    """
+    # from here on, position i refers to the point that is visited at step i
+    points = points[order]
+    n_points = len(points)
+    if n_points == 0:
+        return order
+
+    tree = KDTree(points)
+    is_removed = np.zeros(n_points, dtype=bool)
+
+    sample = points[:: max(1, n_points // _N_SAMPLES)]
+    n_neighbors = tree.query_ball_point(sample, r=min_distance, return_length=True)
+    # each count includes the point itself
+    if n_neighbors.mean() - 1 <= _MAX_MEAN_NEIGHBORS:
+        # pairs are (first, second) with first < second
+        pairs = tree.query_pairs(r=min_distance, output_type="ndarray")
+        first, second = pairs[:, 0], pairs[:, 1]
+        second = second[np.argsort(first, kind="stable")]
+        counts = np.bincount(first, minlength=n_points)
+        stops = np.cumsum(counts)
+        visits = np.flatnonzero(counts)
+        for visit, start, stop in zip(
+            visits.tolist(),
+            (stops - counts)[visits].tolist(),
+            stops[visits].tolist(),
+            strict=True,
+        ):
+            if not is_removed[visit]:
+                is_removed[second[start:stop]] = True
+    else:
+        start = 0
+        while start < n_points:
+            visits = start + np.flatnonzero(~is_removed[start : start + _N_VISITS])
+            start += _N_VISITS
+            if visits.size == 0:
+                continue
+            # A list of neighbors per visited point is held in memory:
+            # the batch is shortened if a few counts indicate large lists.
+            n_neighbors = tree.query_ball_point(
+                points[visits[:: max(1, visits.size // 32)]],
+                r=min_distance,
+                return_length=True,
+            )
+            n_visits = max(1, int(_MAX_NEIGHBORS / n_neighbors.mean()))
+            if n_visits < visits.size:
+                start = int(visits[n_visits])
+                visits = visits[:n_visits]
+            neighbors = tree.query_ball_point(
+                points[visits], r=min_distance, return_sorted=False
+            )
+            for visit, neighbors_ in zip(visits.tolist(), neighbors, strict=True):
+                if not is_removed[visit]:
+                    is_removed[neighbors_] = True
+                    # neighbors_ contains the visited point itself
+                    is_removed[visit] = False
+
+    return order[~is_removed]
+
+
+def thin_by_distance(
+    locdata: LocData,
+    min_distance: float,
+    order: npt.ArrayLike | None = None,
+    loc_properties: list[str] | None = None,
+    seed: RandomGeneratorSeed = None,
+) -> LocData:
+    """
+    Thin localizations such that all remaining localizations are farther
+    apart than `min_distance`.
+
+    Localizations are visited one after the other in the given `order`.
+    A visited localization is kept unless it has been excluded before,
+    and all localizations within `min_distance` of a kept localization
+    are excluded.
+    A localization at a distance equal to `min_distance` is excluded.
+    Each excluded localization is thus within `min_distance` of a remaining
+    one.
+
+    Parameters
+    ----------
+    locdata
+        Specifying the localization data from which to select localization
+        data.
+    min_distance
+        The distance that all pairs of remaining localizations exceed.
+    order
+        Positions (row numbers, not index labels) of the localizations in
+        the sequence in which they are visited.
+        Localizations that come first take precedence.
+        Localizations that are not listed are excluded.
+        If None, localizations are visited in random order.
+    loc_properties
+        The LocData properties to be used as coordinates.
+        If None, `locdata.coordinates` will be used.
+    seed
+        Random number generation seed for the random order.
+
+    Returns
+    -------
+    LocData
+        A new instance of LocData with the remaining localizations in the
+        sequence of `locdata`.
+
+    Raises
+    ------
+    ValueError
+        If `min_distance` is negative.
+    TypeError
+        If `order` is not a one-dimensional sequence of integers.
+
+    Examples
+    --------
+    >>> import locan as lc
+    >>> locdata = lc.LocData.from_coordinates(
+    ...     [(0, 0), (1, 0), (2, 0), (10, 10)]
+    ... )
+    >>> thinned = lc.thin_by_distance(
+    ...     locdata, min_distance=1, order=[0, 1, 2, 3]
+    ... )
+    >>> thinned.data.index.tolist()
+    [0, 2, 3]
+    >>> thinned = lc.thin_by_distance(
+    ...     locdata, min_distance=1, order=[1, 0, 2, 3]
+    ... )
+    >>> thinned.data.index.tolist()
+    [1, 3]
+    """
+    # converted before locals() is taken: the history records the abbreviated
+    # string of an array instead of the full string of a long list
+    if order is not None:
+        order = np.asarray(order)
+    local_parameter = locals()
+
+    if min_distance < 0:
+        raise ValueError(f"`min_distance` must not be negative, got {min_distance}.")
+
+    if len(locdata) == 0:
+        return locdata
+
+    loc_properties = _check_loc_properties(locdata, loc_properties)
+    points = locdata.data[loc_properties].to_numpy()
+
+    if order is None:
+        order_ = np.random.default_rng(seed).permutation(len(points))
+    elif order.ndim != 1 or (order.size > 0 and order.dtype.kind not in "iu"):
+        # a boolean mask or floats would be taken as positions silently
+        raise TypeError(
+            "`order` must be a one-dimensional sequence of integer positions."
+        )
+    else:
+        order_ = order.astype(np.int64)
+
+    positions = _thin_points(points=points, min_distance=min_distance, order=order_)
+    new_locdata = LocData.from_selection(
+        locdata=locdata, indices=locdata.data.index[np.sort(positions)]
+    )
+
+    # update metadata
+    meta_ = _modify_meta(
+        locdata,
+        new_locdata,
+        function_name=sys._getframe().f_code.co_name,
+        parameter=local_parameter,
+        meta=None,
+    )
+    new_locdata.meta = meta_
 
     return new_locdata
 

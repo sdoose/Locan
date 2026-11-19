@@ -21,6 +21,8 @@ New Features
   positions as clusters
 - ``LocData.set_region`` sets the region with an optional check that all
   localizations are within the region
+- ``thin_by_distance`` thins localizations such that all remaining localizations
+  are farther apart than a minimum distance
 
 API Changes
 -----------

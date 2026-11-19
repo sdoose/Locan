@@ -187,6 +187,7 @@ from .process import (
     serial_clustering as serial_clustering,
     standardize as standardize,
     statistics as statistics,
+    thin_by_distance as thin_by_distance,
     track as track,
     transform_affine as transform_affine,
     transform_counts_to_photons as transform_counts_to_photons,
